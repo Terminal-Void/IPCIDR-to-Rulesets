@@ -1,14 +1,21 @@
 name = "cernet-rules"
 main = "worker.js"
 compatibility_date = "2026-05-22"
+workers_dev = true
 
-kv_namespaces = [
-  { binding = "RULES_KV", id = "你的_KV_NAMESPACE_ID" }
-]
+# 公开配置可以写这里；私有配置不要写进公开仓库。
+# [vars]
+# CONFIG_URL = "https://example.com/cernet-config.json"
 
-[vars]
-# 可选：如果不用 CONFIG_URL / KV config，可以把配置 JSON 放这里
-# CONFIG_JSON = """{"upstreams":{"cernet4":["https://ispip.clang.cn/cernet.txt"],"cernet6":["https://example.com/cernet6.txt"]}}"""
+# 只声明需要哪些 secret 名称，不包含实际值。
+[secrets]
+required = ["AUTH_TOKEN"]
+
+
+# 绑定KV
+[[kv_namespaces]]
+binding = "RULES_KV"
+id = "c39b7b1762bf4009aeec4e0a45be1608"
 
 [triggers]
 crons = ["17 */6 * * *"]

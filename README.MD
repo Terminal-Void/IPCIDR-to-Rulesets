@@ -106,94 +106,178 @@ https://rules.example.com/cernet4.mihomo.yaml?token=YOUR_TOKEN
 
 注意：URL token 可能出现在客户端日志、代理日志或浏览器历史记录中。能使用 Header 的场景优先使用 Header。
 
-## 部署准备
+## 真实部署流程（Cloudflare Workers + GitHub 公开仓库）
 
-### 1. 安装 Wrangler
+这一节适合：你想把项目放在 GitHub 公开仓库，然后在 Cloudflare Dashboard 里连接仓库自动部署，同时让 Cloudflare 首次部署时自动创建 KV 绑定。
 
-```sh
-npm install -g wrangler
-```
-
-### 2. 登录 Cloudflare
-
-```sh
-wrangler login
-```
-
-### 3. 创建 KV Namespace
-
-```sh
-wrangler kv namespace create RULES_KV
-```
-
-命令会返回类似：
+核心原则：
 
 ```text
-{ binding = "RULES_KV", id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+公开仓库里可以放：worker.js、README.md、package.json、wrangler.toml
+公开仓库里不要放：AUTH_TOKEN、AUTH_TOKENS、私有 CONFIG_URL、Cloudflare API Token
+KV 可以让 Cloudflare 自动创建；token 必须在 Cloudflare Dashboard 里配置为 Secret
 ```
 
-把返回的 `id` 填入 `wrangler.toml`。
+### 1. 推荐仓库结构
 
-## wrangler.toml 示例
+```text
+cernet-rules-worker/
+├── worker.js
+├── package.json
+├── wrangler.toml
+├── README.md
+└── .gitignore
+```
+
+### 2. package.json
+
+```json
+{
+  "name": "cernet-rules-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
+```
+
+### 3. wrangler.toml：自动创建 KV 版本
+
+这是最适合 GitHub 公开仓库的写法：
 
 ```toml
 name = "cernet-rules"
 main = "worker.js"
 compatibility_date = "2026-05-22"
+workers_dev = true
 
-kv_namespaces = [
-  { binding = "RULES_KV", id = "YOUR_KV_NAMESPACE_ID" }
-]
-
-[vars]
-# 可选：外部配置 URL。也可以通过 secret 配置。
+# 可选：公开配置 URL 可以写这里；不想公开就不要写，改到 Dashboard 里设 Secret。
+# [vars]
 # CONFIG_URL = "https://example.com/cernet-config.json"
+
+# 声明需要哪些 Secret。这里只是声明名称，不会把 secret 值写进仓库。
+[secrets]
+required = ["AUTH_TOKEN"]
+
+# 自动 provisioning：不写 id。首次 deploy 时 Cloudflare 会自动创建 KV namespace。
+[[kv_namespaces]]
+binding = "RULES_KV"
 
 [triggers]
 crons = ["17 */6 * * *"]
 ```
 
-## 环境变量与 Secret
-
-### 必需变量
-
-| 名称            | 类型     | 说明               |
-| ------------- | ------ | ---------------- |
-| `AUTH_TOKEN`  | Secret | 单个访问 token       |
-| `AUTH_TOKENS` | Secret | 多 token，使用英文逗号分隔 |
-
-`AUTH_TOKEN` 和 `AUTH_TOKENS` 至少配置一个。
-
-配置单 token：
-
-```sh
-wrangler secret put AUTH_TOKEN
-```
-
-配置多 token：
-
-```sh
-wrangler secret put AUTH_TOKENS
-```
-
-示例内容：
+重点：
 
 ```text
-token-for-router,token-for-openclash,token-for-surge
+[[kv_namespaces]]
+binding = "RULES_KV"
 ```
 
-### 可选变量
+这里故意不写 `id`。Wrangler/Cloudflare 会在部署时自动创建 KV 资源。
 
-| 名称            | 类型           | 说明            |
-| ------------- | ------------ | ------------- |
-| `CONFIG_URL`  | Var 或 Secret | 外部配置 JSON URL |
-| `CONFIG_JSON` | Var 或 Secret | 直接写入的 JSON 配置 |
+如果你从 Dashboard 连接 GitHub 仓库部署，Cloudflare 会创建资源，但生成的 KV id 不会自动回写到 GitHub 仓库；以后仍然可以继续使用这个项目，因为绑定已经存在于 Cloudflare Worker 配置里。
 
-配置优先级：
+### 4. GitHub 仓库里不要提交这些文件
+
+`.gitignore` 建议：
+
+```gitignore
+node_modules
+.wrangler
+.dev.vars
+.env
+*.log
+```
+
+### 5. 在 Cloudflare Dashboard 从 GitHub 创建/连接项目
+
+推荐流程：
 
 ```text
-CONFIG_URL > KV 中的 cernet:config > CONFIG_JSON > Worker 内置默认配置
+Cloudflare Dashboard
+→ Workers & Pages
+→ Create / Import from Git
+→ 选择 GitHub 仓库
+→ 选择项目根目录
+→ Build command: npm ci
+→ Deploy command: npx wrangler deploy
 ```
+
+如果 Dashboard 只让你填一个构建命令，可以用：
+
+```sh
+npm ci && npx wrangler deploy
+```
+
+注意：Worker 名称必须和 `wrangler.toml` 里的 `name = "cernet-rules"` 一致。否则连接现有 Worker 或构建部署时可能失败。
+
+### 6. 在 Cloudflare Dashboard 配置 Secret
+
+部署前或部署后，在 Worker 项目的设置里添加 Secret：
+
+```text
+AUTH_TOKEN = 一个强随机 token
+```
+
+如果你要多个 token：
+
+```text
+AUTH_TOKENS = token-for-router,token-for-openclash,token-for-surge
+```
+
+如果你的配置 URL 不想公开，也可以把它设为 Secret：
+
+```text
+CONFIG_URL = https://private.example.com/cernet-config.json
+```
+
+`wrangler.toml` 里的 `[secrets] required = ["AUTH_TOKEN"]` 只声明必须存在这个 Secret，不包含实际值。
+
+### 7. 部署后验证
+
+```sh
+export BASE="https://cernet-rules.YOUR_SUBDOMAIN.workers.dev"
+export TOKEN="你的 token"
+
+curl -fsSL -H "Authorization: Bearer $TOKEN" "$BASE/health"
+curl -fsSL -H "Authorization: Bearer $TOKEN" "$BASE/cernet4.json" | head
+curl -fsSL -H "Authorization: Bearer $TOKEN" "$BASE/cernet4.txt" | head
+curl -fsSL -H "Authorization: Bearer $TOKEN" "$BASE/cernet4.mihomo.yaml" | head
+```
+
+### 8. 如果你想更可复现：手动创建 KV 并提交 id
+
+自动创建 KV 很方便，但它是隐式资源。如果你希望仓库配置完全可复现，可以本地手动创建 KV：
+
+```sh
+npx wrangler kv namespace create cernet-rules-kv --binding RULES_KV --update-config
+```
+
+然后 `wrangler.toml` 会变成：
+
+```toml
+[[kv_namespaces]]
+binding = "RULES_KV"
+id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+这个 `id` 不是密钥，可以提交到仓库。只有 token、API key、私有配置 URL 这类值才需要保密。
+
+### 9. 两种部署方式如何选择
+
+| 方式             | wrangler.toml 写法     | 优点           | 缺点                     |
+| -------------- | -------------------- | ------------ | ---------------------- |
+| GitHub 自动创建 KV | 只写 `binding`，不写 `id` | 最适合公开仓库，一键导入 | KV id 不会回写到仓库，资源较隐式    |
+| 手动创建 KV 后提交 id | 写 `binding` + `id`   | 最可复现，换机器部署清晰 | 需要先本地运行 Wrangler 创建 KV |
+
+个人使用推荐先用“GitHub 自动创建 KV”。项目稳定后，如果你想更规范，再改成手动创建 KV 并提交 `id`。
 
 ## 外部配置示例
 
