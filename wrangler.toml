@@ -1,0 +1,14 @@
+name = "cernet-rules"
+main = "worker.js"
+compatibility_date = "2026-05-22"
+
+kv_namespaces = [
+  { binding = "RULES_KV", id = "你的_KV_NAMESPACE_ID" }
+]
+
+[vars]
+# 可选：如果不用 CONFIG_URL / KV config，可以把配置 JSON 放这里
+# CONFIG_JSON = """{"upstreams":{"cernet4":["https://ispip.clang.cn/cernet.txt"],"cernet6":["https://example.com/cernet6.txt"]}}"""
+
+[triggers]
+crons = ["17 */6 * * *"]
