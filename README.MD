@@ -1,5 +1,7 @@
 # CERNET Rules Worker
 
+# 开发中，功能未完全实现
+
 一个运行在 Cloudflare Workers 上的 CERNET 规则适配器，用于从上游数据源拉取 CERNET IPv4/IPv6 CIDR，完成清洗、去重、冲突网段排除、格式转换、鉴权和缓存，然后为 MT5000/OpenWrt、OpenClash/Mihomo、Surge 等客户端提供统一规则输出。
 
 ## 适用场景
